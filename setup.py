@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 import versioneer
 
 
-NAME = 'pandas-gbq'
+NAME = 'pandas-gbq-te'
 
 
 # versioning
@@ -31,12 +31,12 @@ setup(
     name=NAME,
     version=versioneer.get_version(),
     cmdclass=versioneer.get_cmdclass(),
-    description="Pandas interface to Google Big Query",
+    description="Pandas interface to Google Big Query (Tactile Entertainment version)",
     long_description=readme(),
     license='BSD License',
-    author='The PyData Development Team',
-    author_email='pydata@googlegroups.com',
-    url='https://github.com/pydata/pandas-gbq',
+    author='Paolo Burelli',
+    author_email='paolo@@tactile.dk',
+    url='https://github.com/tactileentertainment/pandas-gbq-te',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
