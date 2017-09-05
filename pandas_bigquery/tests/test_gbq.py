@@ -14,7 +14,7 @@ from pandas import compat
 
 from pandas.compat import u, range
 from pandas import NaT, DataFrame
-from pandas_gbq import gbq
+from pandas_bigquery import gbq
 import pandas.util.testing as tm
 from pandas.compat.numpy import np_datetime64_compat
 
@@ -51,7 +51,7 @@ def _in_travis_environment():
 
 
 def _get_dataset_prefix_random():
-    return ''.join(['pandas_gbq_', str(randint(1, 100000))])
+    return ''.join(['pandas_bigquery_', str(randint(1, 100000))])
 
 
 def _get_project_id():
@@ -308,7 +308,7 @@ class GBQUnitTests(object):
     def test_import_google_api_python_client(self):
         if not _in_travis_environment():
             pytest.skip("Skip if not in travis environment. Extra test to "
-                        "make sure pandas_gbq doesn't break when "
+                        "make sure pandas_bigquery doesn't break when "
                         "using google-api-python-client==1.2")
 
         if compat.PY2:

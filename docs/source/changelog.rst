@@ -1,9 +1,10 @@
 Changelog
 =========
 
-0.2.1 / 2017-??-??
+0.3.0-beta / 2017-09-05
 ------------------
 
+- Added object oriented interface
 - Added support for replacing date partitioned tables (:issue:`43`), :func:`to_tbq` can be used regularly with a partition decorator
 - Schema comparison is now case insensitive
 - :func:`GbqConnector.copy` allows to create a copy job

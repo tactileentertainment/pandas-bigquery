@@ -2,14 +2,6 @@
 # -*- coding: utf-8 -*-
 
 from setuptools import setup, find_packages
-import versioneer
-
-
-NAME = 'pandas-gbq-te'
-
-
-# versioning
-cmdclass = versioneer.get_cmdclass()
 
 
 def readme():
@@ -24,19 +16,19 @@ INSTALL_REQUIRES = [
     'google-auth>=1.0.0',
     'google-auth-httplib2>=0.0.1',
     'google-auth-oauthlib>=0.0.1',
+    'pyOpenSSL>=17.2.0'
 ]
 
-
 setup(
-    name=NAME,
-    version=versioneer.get_version(),
-    cmdclass=versioneer.get_cmdclass(),
-    description="Pandas interface to Google Big Query (Tactile Entertainment version)",
+    name='pandas-bigquery',
+    version='0.9.0',
+    description="Object oriented Pandas interface to Google Big Query "
+                "(forked from https://github.com/pydata/pandas-gbq)",
     long_description=readme(),
     license='BSD License',
     author='Paolo Burelli',
-    author_email='paolo@@tactile.dk',
-    url='https://github.com/tactileentertainment/pandas-gbq-te',
+    author_email='paolo@tactile.dk',
+    url='https://github.com/tactileentertainment/pandas-bigquery',
     classifiers=[
         'Development Status :: 4 - Beta',
         'Environment :: Console',
