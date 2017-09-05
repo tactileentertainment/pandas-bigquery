@@ -5,6 +5,7 @@ Changelog
 ------------------
 
 - Added support for replacing date partitioned tables (:issue:`43`), :func:`to_tbq` can be used regularly with a partition decorator
+- Schema comparison is now case insensitive
 - :func:`GbqConnector.copy` allows to create a copy job
 - :func:`_Table.contains_partition_decorator` returns whether the table_id contains a $ character
 - :func:`_Table.exists` correctly ignores the partition decorator in case it is provided
