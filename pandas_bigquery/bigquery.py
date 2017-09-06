@@ -116,7 +116,7 @@ class Bigquery:
                     'priority': priority
                 }
             }
-        config['query']['useLegacySql'] = dialect == 'legacy',
+        config['query']['useLegacySql'] = dialect == 'legacy'
 
         return self.jobs.query_async(query, configuration=config)
 
@@ -143,6 +143,7 @@ class Bigquery:
                     'priority': priority
                 }
             }
+        config['query']['useLegacySql'] = dialect == 'legacy'
 
         schema, pages = self.jobs.query(query, configuration=config)
         dataframe_list = []
