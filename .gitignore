@@ -63,7 +63,7 @@ dist
 *.whl
 **/wheelhouse/*
 # coverage
-.coverage
+#.coverage
 
 # OS generated files #
 ######################

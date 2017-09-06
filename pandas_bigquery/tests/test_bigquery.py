@@ -7,7 +7,10 @@ import numpy as np
 from pandas.compat import range
 from pandas import DataFrame
 from pandas_bigquery import Bigquery
-from pandas_bigquery import gbq
+from pandas_bigquery import gbqconnector
+from pandas_bigquery.datasets import Datasets
+from pandas_bigquery.exceptions import *
+from pandas_bigquery.bigquery_jupyter import BigqueryJupyter
 
 TABLE_ID = 'new_test'
 DATASET_PREFIX_ROOT = 'pandas_bigquery_'
@@ -52,7 +55,7 @@ def _test_imports():
     except ImportError:
         raise ImportError('Could not import pkg_resources (setuptools).')
 
-    gbq._test_google_api_imports()
+    gbqconnector._test_google_api_imports()
 
 
 def _setup_common():
@@ -63,8 +66,8 @@ def _setup_common():
 
 
 def _cleanup():
-    bq_dataset = gbq._Dataset(_get_project_id(), private_key=_get_private_key_path())
-    datasets = bq_dataset.datasets()
+    bq_dataset = Datasets(_get_project_id(), private_key=_get_private_key_path())
+    datasets = bq_dataset.list()
     for dataset_id in datasets:
         if DATASET_PREFIX_ROOT in dataset_id:
             try:
@@ -152,7 +155,7 @@ class TestTableOperations(object):
 
         self.bigquery.table_delete(self.dataset_prefix, TABLE_ID + test_id)
 
-        with pytest.raises(gbq.GenericGBQException):
+        with pytest.raises(GenericGBQException):
             self.bigquery.verify_schema(self.dataset_prefix, TABLE_ID + test_id, df)
 
     def test_upload_data(self):
@@ -164,7 +167,7 @@ class TestTableOperations(object):
 
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
-                self.destination_table + test_id), strict=False, local_cache=False)
+                self.destination_table + test_id), strict=False, priority='INTERACTIVE')
         assert result['num_rows'][0] == test_size
 
     def test_table_copy(self):
@@ -194,7 +197,7 @@ class TestTableOperations(object):
 
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
-                self.destination_table + test_id + "_copy"), strict=False, local_cache=False)
+                self.destination_table + test_id + "_copy"), strict=False, priority='INTERACTIVE')
         assert result['num_rows'][0] == test_size
 
 
@@ -248,7 +251,7 @@ class TestPartitionedTableOperations(object):
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
                 self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d")), dialect='legacy',
-            local_cache=False)
+            priority='INTERACTIVE')
 
         assert result['num_rows'][0] == 0
 
@@ -267,7 +270,7 @@ class TestPartitionedTableOperations(object):
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
                 self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d")), dialect='legacy',
-            local_cache=False)
+            priority='INTERACTIVE')
 
         assert result['num_rows'][0] == test_size
 
@@ -288,7 +291,7 @@ class TestPartitionedTableOperations(object):
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
                 self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d")), dialect='legacy',
-            local_cache=False)
+            priority='INTERACTIVE')
 
         assert result['num_rows'][0] == test_size * 2
 
@@ -310,7 +313,7 @@ class TestPartitionedTableOperations(object):
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
                 self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d")), dialect='legacy',
-            local_cache=False)
+            priority='INTERACTIVE')
 
         assert result['num_rows'][0] == test_size
 
@@ -325,6 +328,7 @@ class TestQueries(object):
 
     def setup_method(self, method):
         self.bigquery = Bigquery(_get_project_id(), _get_private_key_path())
+        self.biqguery_jupyter = BigqueryJupyter(_get_project_id(), _get_private_key_path())
         self.dataset_prefix = _get_dataset_prefix_random()
         self.destination_table = "{0}.{1}".format(self.dataset_prefix, TABLE_ID)
 
@@ -343,22 +347,22 @@ class TestQueries(object):
 
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
-                self.destination_table + test_id), strict=False, local_cache=False)
+                self.destination_table + test_id), strict=False, priority='INTERACTIVE')
         assert result['num_rows'][0] == test_size
 
     def test_run_query_interactive_local_cache(self):
         test_id = "2"
         test_size = 10
         df = make_mixed_dataframe_v2(test_size)
-        self.bigquery.upload(df, self.destination_table + test_id)
+        self.biqguery_jupyter.upload(df, self.destination_table + test_id)
 
-        self.bigquery.query(
+        self.biqguery_jupyter.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
                 self.destination_table + test_id), strict=False)
 
-        self.bigquery.upload(df, self.destination_table + test_id, if_exists='append')
+        self.biqguery_jupyter.upload(df, self.destination_table + test_id, if_exists='append')
 
-        result = self.bigquery.query(
+        result = self.biqguery_jupyter.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
                 self.destination_table + test_id), strict=False)
 
@@ -404,7 +408,7 @@ class TestQueries(object):
         with pytest.raises(Exception):
             self.bigquery.query(
                 "SELECT COUNT(*) as num_rows FROM {0}".format(
-                    self.destination_table + test_id), local_cache=False)
+                    self.destination_table + test_id), priority='INTERACTIVE')
 
     def test_run_query_to_table(self):
         test_id = "6"
@@ -429,7 +433,7 @@ class TestQueries(object):
 
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
-                self.destination_table + test_id + '_copy'), strict=False, local_cache=False)
+                self.destination_table + test_id + '_copy'), strict=False, priority='INTERACTIVE')
         assert result['num_rows'][0] == test_size
 
     def test_run_query_batch_retry_wrong(self):
@@ -438,7 +442,7 @@ class TestQueries(object):
         df = make_mixed_dataframe_v2(test_size)
         self.bigquery.upload(df, self.destination_table + test_id)
 
-        with pytest.raises(gbq.GenericGBQException):
+        with pytest.raises(GenericGBQException):
             Bigquery.run_with_retry(self.bigquery.query_batch, 10,
                                     query="SELECT COUNT(***) as num_rows FROM {0}".format(
                                         self.destination_table + test_id), strict=False)
@@ -452,6 +456,6 @@ class TestQueries(object):
         result, attempts = Bigquery.run_with_retry(self.bigquery.query,
                                                    query="SELECT COUNT(*) as num_rows FROM {0}".format(
                                                        self.destination_table + test_id), strict=False,
-                                                   local_cache=False)
+                                                   priority='INTERACTIVE')
 
         assert result['num_rows'][0] == test_size and attempts == 1

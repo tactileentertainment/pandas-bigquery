@@ -1,26 +1,30 @@
 from apiclient.discovery import build
 from oauth2client.service_account import ServiceAccountCredentials
 from httplib2 import Http
-import os, hashlib
-import pandas as pd
+import os
 import logging
-from pandas_bigquery.gbq import GbqConnector
-from pandas_bigquery import gbq
+from pandas_bigquery.exceptions import *
+from pandas_bigquery.datasets import Datasets
+from pandas_bigquery.tables import Tables
+from pandas_bigquery.tabledata import Tabledata
+from pandas_bigquery.jobs import Jobs
+from pandas import DataFrame, concat
+from pandas.compat import lzip
+from datetime import datetime
+from random import randint
+import numpy as np
+from time import sleep
 
 try:
     from googleapiclient.errors import HttpError
 except:
     from apiclient.errors import HttpError
-from google.auth.exceptions import RefreshError
 
 log = logging.getLogger()
 
 
 class Bigquery:
-    def __init__(self,
-                 project_id=os.getenv('BIGQUERY_PROJECT', 'tactile-analytics'),
-                 private_key_path=os.getenv('BIGQUERY_KEY_PATH', None),
-                 cache_prefix='/tmp/queryresults_'):
+    def __init__(self, project_id=os.getenv('BIGQUERY_PROJECT'), private_key_path=os.getenv('BIGQUERY_KEY_PATH')):
 
         if private_key_path is None:
             raise RuntimeError('Invalid bigquery key path')
@@ -37,134 +41,241 @@ class Bigquery:
         with open(private_key_path) as data_file:
             self.private_key = data_file.read()
 
-        self._cache_path = cache_prefix
+        self._tables = Tables(self.project_id, private_key=self.private_key_path)
+        self._datasets = Datasets(self.project_id, private_key=self.private_key_path)
+        self._jobs = Jobs(self.project_id, private_key=self.private_key_path)
+        self._tabledata = Tabledata(self.project_id, private_key=self.private_key_path)
 
-        self._connector = GbqConnector(project_id, private_key=private_key_path)
+    @staticmethod
+    def _parse_data(schema, rows):
+        # see:
+        # http://pandas.pydata.org/pandas-docs/dev/missing_data.html
+        # #missing-data-casting-rules-and-indexing
+        dtype_map = {'FLOAT': np.dtype(float),
+                     'TIMESTAMP': 'M8[ns]'}
+
+        fields = schema['fields']
+        col_types = [field['type'] for field in fields]
+        col_names = [str(field['name']) for field in fields]
+        col_dtypes = [dtype_map.get(field['type'], object) for field in fields]
+        page_array = np.zeros((len(rows),), dtype=lzip(col_names, col_dtypes))
+        for row_num, raw_row in enumerate(rows):
+            entries = raw_row.get('f', [])
+            for col_num, field_type in enumerate(col_types):
+                field_value = Bigquery._parse_entry(entries[col_num].get('v', ''),
+                                                    field_type)
+                page_array[row_num][col_num] = field_value
+
+        return DataFrame(page_array, columns=col_names)
+
+    @staticmethod
+    def _parse_entry(field_value, field_type):
+        if field_value is None or field_value == 'null':
+            return None
+        if field_type == 'INTEGER':
+            return int(field_value)
+        elif field_type == 'FLOAT':
+            return float(field_value)
+        elif field_type == 'TIMESTAMP':
+            timestamp = datetime.utcfromtimestamp(float(field_value))
+            return np.datetime64(timestamp)
+        elif field_type == 'BOOLEAN':
+            return field_value == 'true'
+        return field_value
 
     @property
-    def _dataset(self):
-        return gbq._Dataset(self.project_id,
-                            private_key=self.private_key_path)
+    def datasets(self):
+        return self._datasets
 
-    def _table(self, dataset_id):
-        return gbq._Table(self.project_id, dataset_id,
-                          private_key=self.private_key_path)
+    @property
+    def tables(self):
+        return self._tables
 
-    def query_async(self, query, dialect='standard', strict=True, **kwargs):
+    @property
+    def jobs(self):
+        return self._jobs
+
+    @property
+    def tabledata(self):
+        return self._tabledata
+
+    def query_async(self, query, dialect='standard', priority='BATCH', strict=True, **kwargs):
 
         if Bigquery._check_strict(query, strict):
             raise Exception('Strict mode error',
                             "partition reference not found in query, "
                             "please add a partitiondate, _partitiontime or _table_suffix restriction "
                             "in the where-clause or set strict = False if you are confident in what you're doing.")
-
-        job_collection = self._connector.service.jobs()
-
-        job_config = {
-            'query': {
-                'query': query,
-                'useLegacySql': dialect == 'legacy',
-                'priority': 'BATCH'
-            }
-        }
-        config = kwargs.get('configuration')
-        if config is not None:
-            if len(config) != 1:
-                raise ValueError("Only one job type must be specified, but "
-                                 "given {}".format(','.join(config.keys())))
-            if 'query' in config:
-                if 'query' in config['query'] and query is not None:
-                    raise ValueError("Query statement can't be specified "
-                                     "inside config while it is specified "
-                                     "as parameter")
-
-                job_config['query'].update(config['query'])
-            else:
-                raise ValueError("Only 'query' job type is supported")
-
-        job_data = {
-            'configuration': job_config
-        }
-
-        try:
-            query_reply = job_collection.insert(
-                projectId=self.project_id, body=job_data).execute()
-        except (RefreshError, ValueError):
-            if self._connector.private_key:
-                raise gbq.AccessDenied(
-                    "The service account credentials are not valid")
-            else:
-                raise gbq.AccessDenied(
-                    "The credentials have been revoked or expired, "
-                    "please re-run the application to re-authorize")
-        except HttpError as ex:
-            self._connector.ess_http_error(ex)
-
-        return query_reply['jobReference']['jobId']
-
-    def query_batch(self, query, dialect='standard', strict=True, **kwargs):
 
         config = kwargs.get('configuration')
         if config is not None and 'query' in config:
-            config['query']['priority'] = 'BATCH'
+            config['query']['priority'] = priority
         else:
             config = {
                 'query': {
-                    'priority': 'BATCH'
+                    'priority': priority
+                }
+            }
+        config['query']['useLegacySql'] = dialect == 'legacy',
+
+        return self.jobs.query_async(query, configuration=config)
+
+    def query(self, query, dialect='standard', priority='BATCH', strict=True, **kwargs):
+
+        if Bigquery._check_strict(query, strict):
+            raise Exception('Strict mode error',
+                            "partition reference not found in query, "
+                            "please add a partitiondate, _partitiontime or _table_suffix restriction "
+                            "in the where-clause or set strict = False if you are confident in what you're doing.")
+
+        if dialect not in ('legacy', 'standard'):
+            raise ValueError("'{0}' is not valid for dialect".format(dialect))
+
+        if priority not in ('BATCH', 'INTERACTIVE'):
+            raise ValueError("'{0}' is not valid for priority".format(dialect))
+
+        config = kwargs.get('configuration')
+        if config is not None and 'query' in config:
+            config['query']['priority'] = priority
+        else:
+            config = {
+                'query': {
+                    'priority': priority
                 }
             }
 
-        if Bigquery._check_strict(query, strict):
-            raise Exception('Strict mode error',
-                            "partition reference not found in query, "
-                            "please add a partitiondate, _partitiontime or _table_suffix restriction "
-                            "in the where-clause or set strict = False if you are confident in what you're doing.")
+        schema, pages = self.jobs.query(query, configuration=config)
+        dataframe_list = []
+        while len(pages) > 0:
+            page = pages.pop()
+            dataframe_list.append(Bigquery._parse_data(schema, page))
 
-        return gbq.read_gbq(query, self.project_id, dialect=dialect, private_key=self.private_key_path,
-                            configuration=config)
-
-    def query(self, query, dialect='standard', local_cache=True, strict=True):
-
-        if Bigquery._check_strict(query, strict):
-            raise Exception('Strict mode error',
-                            "partition reference not found in query, "
-                            "please add a partitiondate, _partitiontime or _table_suffix restriction "
-                            "in the where-clause or set strict = False if you are confident in what you're doing.")
-
-        querycomment = """/* Query launched from JupyterHub
-                User: {user}
-                Notebook: {notebook} */"""
-
-        user = os.getenv('USER', 'pytt')
-
-        notebook = os.path.abspath(os.path.curdir)
-        commentedquery = "\n".join(
-            [querycomment.format(user=user, notebook=notebook), query])
-
-        if local_cache:
-            fn = self._cache_path + hashlib.md5(
-                self.project_id.encode('ascii') + query.encode(
-                    'ascii')).hexdigest() + '.tmp'
-
-            if os.path.exists(fn):
-                log.info('Query cached.')
-                df = pd.read_pickle(fn)
-            else:
-                df = gbq.read_gbq(commentedquery, self.project_id, dialect=dialect, private_key=self.private_key_path)
-                with open(os.path.splitext(fn)[0] + '.qry', 'w') as f:
-                    f.write(query)
-
-                df.to_pickle(fn)
-            return df
+        if len(dataframe_list) > 0:
+            final_df = concat(dataframe_list, ignore_index=True)
         else:
-            return gbq.read_gbq(commentedquery, self.project_id, dialect=dialect, private_key=self.private_key_path)
+            final_df = Bigquery._parse_data(schema, [])
 
-    def upload(self, dataframe, destination_table, if_exists='fail'):
-        gbq.to_gbq(dataframe, destination_table, project_id=self.project_id, if_exists=if_exists,
-                   private_key=self.private_key_path)
+        # cast BOOLEAN and INTEGER columns from object to bool/int
+        # if they dont have any nulls
+        type_map = {'BOOLEAN': bool, 'INTEGER': int}
+        for field in schema['fields']:
+            if field['type'] in type_map and \
+                    final_df[field['name']].notnull().all():
+                final_df[field['name']] = \
+                    final_df[field['name']].astype(type_map[field['type']])
 
-    def copy(self, source_dataset, source_table, destination_dataset, destination_table):
-        return self._connector.copy(source_dataset, source_table, destination_dataset, destination_table)
+        self.jobs.print_elapsed_seconds(
+            'Total time taken',
+            datetime.now().strftime('s.\nFinished at %Y-%m-%d %H:%M:%S.'),
+            0
+        )
+
+        return final_df
+
+    def upload(self, dataframe, destination_table, if_exists='fail', chunksize=10000):
+        if if_exists not in ('fail', 'replace', 'append'):
+            raise ValueError("'{0}' is not valid for if_exists".format(if_exists))
+
+        if '.' not in destination_table:
+            raise NotFoundException(
+                "Invalid Table Name. Should be of the form 'datasetId.tableId' ")
+
+        dataset_id, table_id = destination_table.rsplit('.', 1)
+
+        table_schema = Tables.generate_schema_from_dataframe(dataframe)
+
+        if Tables.contains_partition_decorator(table_id):
+            root_table_id, partition_id = table_id.rsplit('$', 1)
+
+            if not self.tables.exists(dataset_id, root_table_id):
+                raise NotFoundException("Could not write to the partition because "
+                                        "the table does not exist.")
+
+            table_resource = self.tables.get(dataset_id, root_table_id)
+
+            if 'timePartitioning' not in table_resource:
+                raise InvalidSchema("Could not write to the partition because "
+                                    "the table is not partitioned.")
+
+            partition_exists = self.query("SELECT COUNT(*) AS num_rows FROM {0}"
+                                          .format(destination_table),
+                                          strict=False,
+                                          priority='INTERACTIVE',
+                                          dialect='legacy')['num_rows'][0] > 0
+
+            if partition_exists:
+                if if_exists == 'fail':
+                    raise TableCreationError("Could not create the partition "
+                                             "because it already exists. "
+                                             "Change the if_exists parameter to "
+                                             "append or replace data.")
+                elif if_exists == 'append':
+                    if not self.tables.schema_is_subset(dataset_id,
+                                                        root_table_id,
+                                                        table_schema):
+                        raise InvalidSchema("Please verify that the structure and "
+                                            "data types in the DataFrame match "
+                                            "the schema of the destination table.")
+                    self.tabledata.insert_all(dataframe, dataset_id, table_id, chunksize)
+
+                elif if_exists == 'replace':
+                    if not self.tables.schema_is_subset(dataset_id,
+                                                        root_table_id,
+                                                        table_schema):
+                        raise InvalidSchema("Please verify that the structure and "
+                                            "data types in the DataFrame match "
+                                            "the schema of the destination table.")
+
+                    temporary_table_id = '_'.join(
+                        [root_table_id + '_' + partition_id,
+                         str(randint(1, 100000))])
+                    self.tables.insert(dataset_id, temporary_table_id, table_schema)
+                    self.tabledata.insert_all(dataframe, dataset_id, temporary_table_id,
+                                              chunksize)
+                    sleep(30)  # <- Curses Google!!!
+                    self.jobs.query('select * from {0}.{1}'
+                                    .format(dataset_id, temporary_table_id),
+                                    configuration={
+                                        'query': {
+                                            'destinationTable': {
+                                                'projectId': self.project_id,
+                                                'datasetId': dataset_id,
+                                                'tableId': table_id
+                                            },
+                                            'createDisposition':
+                                                'CREATE_IF_NEEDED',
+                                            'writeDisposition':
+                                                'WRITE_TRUNCATE',
+                                            'allowLargeResults': True
+                                        }
+                                    })
+                    self.tables.delete(dataset_id, temporary_table_id)
+
+            else:
+                self.tabledata.insert_all(dataframe, dataset_id, table_id, chunksize)
+
+        else:
+            if self.tables.exists(dataset_id, table_id):
+                if if_exists == 'fail':
+                    raise TableCreationError(
+                        "Could not create the table because it "
+                        "already exists. "
+                        "Change the if_exists parameter to "
+                        "append or replace data.")
+                elif if_exists == 'replace':
+                    self.tables.delete_and_recreate_table(
+                        dataset_id, table_id, table_schema)
+                elif if_exists == 'append':
+                    if not self.tables.schema_is_subset(dataset_id,
+                                                        table_id,
+                                                        table_schema):
+                        raise InvalidSchema("Please verify that the structure and "
+                                            "data types in the DataFrame match "
+                                            "the schema of the destination table.")
+            else:
+                self.tables.insert(dataset_id, table_id, table_schema)
+
+            self.tabledata.insert_all(dataframe, dataset_id, table_id, chunksize)
 
     @staticmethod
     def _check_strict(query, strict):
@@ -172,39 +283,47 @@ class Bigquery:
                not any([x in query.lower() for x in ('partitiondate', '_partitiontime', '_table_suffix', '$')])
 
     @staticmethod
-    def run_with_retry(function, max_tries=10, **kwargs):
+    def run_with_retry(func, max_tries=10, **kwargs):
         for i in range(0, max_tries):
             try:
-                return function(**kwargs), i + 1
+                return func(**kwargs), i + 1
             except Exception as err:
-                log.warning("eun_with_retry error, trying again {0}/{1}".format(i + 1, max_tries))
+                log.warning("run_with_retry error, trying again {0}/{1}".format(i + 1, max_tries))
                 if i == max_tries - 1:
                     raise err
 
+    # Legacy methods
+
+    def copy(self, source_dataset, source_table, destination_dataset, destination_table):
+        return self.jobs.copy(source_dataset, source_table, destination_dataset, destination_table)
+
     def generate_schema(self, df, default_type='STRING'):
-        return gbq._generate_bq_schema(df, default_type)
+        return Tables.generate_schema_from_dataframe(df, default_type)
 
     def schema(self, dataset_id, table_id):
-        return self._connector.schema(dataset_id, table_id)
+        return self.tables.get_schema(dataset_id, table_id)
 
     def resource(self, dataset_id, table_id):
-        return self._connector.resource(dataset_id, table_id)
+        return self.tables.get(dataset_id, table_id)
 
     def verify_schema(self, dataset_id, table_id, schema):
-        return self._connector.verify_schema(dataset_id, table_id, schema)
+        return self.tables.schema_matches(dataset_id, table_id, schema)
 
     def table_copy(self, source_dataset_id, source_table_id, destination_dataset_id, destination_table_id):
-        return self._connector.copy(source_dataset_id, source_table_id, destination_dataset_id, destination_table_id)
+        return self.jobs.copy(source_dataset_id, source_table_id, destination_dataset_id, destination_table_id)
 
     def table_create(self, dataset_id, table_id, schema, **kwargs):
-        return self._table(dataset_id).create(table_id, schema, **kwargs)
+        return self.tables.insert(dataset_id, table_id, schema, **kwargs)
 
     def table_delete(self, dataset_id, table_id):
-        return self._table(dataset_id).delete(table_id)
+        return self.tables.delete(dataset_id, table_id)
 
     @property
     def dataset_list(self):
-        return self._dataset.datasets()
+        return self.datasets.list()
 
     def dataset_delete(self, dataset_id, delete_contents=False):
-        return self._dataset.delete(dataset_id, delete_contents)
+        return self.datasets.delete(dataset_id, delete_contents)
+
+    def query_batch(self, query, dialect='standard', strict=True, **kwargs):
+        return self.query(query=query, dialect=dialect, priority='BATCH', strict=strict, **kwargs)

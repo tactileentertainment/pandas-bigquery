@@ -1,2 +1,2 @@
-from .gbq import to_gbq, read_gbq
 from .bigquery import Bigquery
+from .bigquery_jupyter import BigqueryJupyter
