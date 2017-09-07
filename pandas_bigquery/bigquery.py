@@ -120,7 +120,7 @@ class Bigquery:
 
         return self.jobs.query_async(query, configuration=config)
 
-    def query(self, query, dialect='standard', priority='BATCH', strict=True, **kwargs):
+    def query(self, query, dialect='standard', priority='INTERACTIVE', strict=True, **kwargs):
 
         if Bigquery._check_strict(query, strict):
             raise Exception('Strict mode error',
