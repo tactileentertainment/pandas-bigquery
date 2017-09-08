@@ -139,8 +139,7 @@ class Jobs(GbqConnector):
 
         job_config = {
             'query': {
-                'query': query,
-                'allowLargeResults': True
+                'query': query
             }
         }
         config = kwargs.get('configuration')
@@ -155,6 +154,9 @@ class Jobs(GbqConnector):
                                      "as parameter")
 
                 job_config['query'].update(config['query'])
+
+                if 'destinationTable' in job_config['query']:
+                    job_config['query']['allowLargeResults'] = True
             else:
                 raise ValueError("Only 'query' job type is supported")
 
@@ -288,8 +290,7 @@ class Jobs(GbqConnector):
 
         job_config = {
             'query': {
-                'query': query,
-                'allowLargeResults': True
+                'query': query
             }
         }
         config = kwargs.get('configuration')
@@ -304,6 +305,10 @@ class Jobs(GbqConnector):
                                      "as parameter")
 
                 job_config['query'].update(config['query'])
+
+                if 'destinationTable' in job_config['query']:
+                    job_config['query']['allowLargeResults'] = True
+
             else:
                 raise ValueError("Only 'query' job type is supported")
 
