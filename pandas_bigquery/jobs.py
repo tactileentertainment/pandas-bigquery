@@ -140,6 +140,7 @@ class Jobs(GbqConnector):
         job_config = {
             'query': {
                 'query': query,
+                'allowLargeResults': True
             }
         }
         config = kwargs.get('configuration')
@@ -288,6 +289,7 @@ class Jobs(GbqConnector):
         job_config = {
             'query': {
                 'query': query,
+                'allowLargeResults': True
             }
         }
         config = kwargs.get('configuration')
