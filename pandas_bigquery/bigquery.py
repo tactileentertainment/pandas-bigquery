@@ -287,9 +287,10 @@ class Bigquery:
     def run_with_retry(func, max_tries=10, **kwargs):
         for i in range(0, max_tries):
             try:
+                sleep(i)
                 return func(**kwargs), i + 1
             except Exception as err:
-                log.warning("run_with_retry error, trying again {0}/{1}".format(i + 1, max_tries))
+                log.warning("run_with_retry error ({2}), trying again {0}/{1}".format(i + 1, max_tries, str(err)))
                 if i == max_tries - 1:
                     raise err
 
