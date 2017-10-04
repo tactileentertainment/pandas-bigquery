@@ -192,6 +192,13 @@ class Bigquery:
                 raise NotFoundException("Could not write to the partition because "
                                         "the table does not exist.")
 
+            if not self.tables.schema_is_subset(dataset_id,
+                                                root_table_id,
+                                                table_schema):
+                raise InvalidSchema("Please verify that the structure and "
+                                    "data types in the DataFrame match "
+                                    "the schema of the destination table.")
+
             table_resource = self.tables.get(dataset_id, root_table_id)
 
             if 'timePartitioning' not in table_resource:
@@ -204,56 +211,41 @@ class Bigquery:
                                           priority='INTERACTIVE',
                                           dialect='legacy')['num_rows'][0] > 0
 
-            if partition_exists:
-                if if_exists == 'fail':
-                    raise TableCreationError("Could not create the partition "
-                                             "because it already exists. "
-                                             "Change the if_exists parameter to "
-                                             "append or replace data.")
-                elif if_exists == 'append':
-                    if not self.tables.schema_is_subset(dataset_id,
-                                                        root_table_id,
-                                                        table_schema):
-                        raise InvalidSchema("Please verify that the structure and "
-                                            "data types in the DataFrame match "
-                                            "the schema of the destination table.")
-                    self.tabledata.insert_all(dataframe, dataset_id, table_id, chunksize)
+            if partition_exists and if_exists == 'fail':
+                raise TableCreationError("Could not create the partition "
+                                         "because it already exists. "
+                                         "Change the if_exists parameter to "
+                                         "append or replace data.")
 
-                elif if_exists == 'replace':
-                    if not self.tables.schema_is_subset(dataset_id,
-                                                        root_table_id,
-                                                        table_schema):
-                        raise InvalidSchema("Please verify that the structure and "
-                                            "data types in the DataFrame match "
-                                            "the schema of the destination table.")
-
-                    temporary_table_id = '_'.join(
-                        [root_table_id + '_' + partition_id,
-                         str(randint(1, 100000))])
-                    self.tables.insert(dataset_id, temporary_table_id, table_schema)
-                    self.tabledata.insert_all(dataframe, dataset_id, temporary_table_id,
-                                              chunksize)
-                    sleep(30)  # <- Curses Google!!!
-                    self.jobs.query('select * from {0}.{1}'
-                                    .format(dataset_id, temporary_table_id),
-                                    configuration={
-                                        'query': {
-                                            'destinationTable': {
-                                                'projectId': self.project_id,
-                                                'datasetId': dataset_id,
-                                                'tableId': table_id
-                                            },
-                                            'createDisposition':
-                                                'CREATE_IF_NEEDED',
-                                            'writeDisposition':
-                                                'WRITE_TRUNCATE',
-                                            'allowLargeResults': True
-                                        }
-                                    })
-                    self.tables.delete(dataset_id, temporary_table_id)
+            if -30 < (datetime.today() - datetime.strptime(partition_id, '%Y%m%d')).days < 360 \
+                    and not (partition_exists and if_exists == 'replace'):
+                self.tabledata.insert_all(dataframe, dataset_id, table_id, chunksize)
 
             else:
-                self.tabledata.insert_all(dataframe, dataset_id, table_id, chunksize)
+                write_disposition = 'WRITE_APPEND' if if_exists == 'append' else 'WRITE_TRUNCATE'
+                temporary_table_id = '_'.join(
+                    [root_table_id + '_' + partition_id,
+                     str(randint(1, 100000))])
+                self.tables.insert(dataset_id, temporary_table_id, table_schema)
+                self.tabledata.insert_all(dataframe, dataset_id, temporary_table_id,
+                                          chunksize)
+                sleep(30)  # <- Curses Google!!!
+                self.jobs.query('select * from {0}.{1}'
+                                .format(dataset_id, temporary_table_id),
+                                configuration={
+                                    'query': {
+                                        'destinationTable': {
+                                            'projectId': self.project_id,
+                                            'datasetId': dataset_id,
+                                            'tableId': table_id
+                                        },
+                                        'createDisposition': 'CREATE_IF_NEEDED',
+                                        'writeDisposition': write_disposition,
+                                        'allowLargeResults': True
+                                    }
+                                })
+                self.tables.delete(dataset_id, temporary_table_id)
+
 
         else:
             if self.tables.exists(dataset_id, table_id):

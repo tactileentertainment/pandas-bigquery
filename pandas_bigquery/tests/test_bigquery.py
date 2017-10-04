@@ -1,5 +1,5 @@
 import pytest
-from datetime import datetime
+from datetime import datetime, timedelta
 import pytz
 import os
 from random import randint
@@ -244,7 +244,28 @@ class TestPartitionedTableOperations(object):
             'timePartitioning': {'type': 'DAY'}
         })
 
-        self.bigquery.upload(df, self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d"))
+        self.bigquery.upload(df, self.destination_table + test_id + '_buffer')
+
+        self.bigquery.query(f"select * from {self.destination_table}{test_id}_buffer", configuration={
+            'query': {
+                'destinationTable': {
+                    'projectId': _get_project_id(),
+                    'datasetId': self.dataset_prefix,
+                    'tableId': TABLE_ID + test_id + '$' + datetime.today().strftime("%Y%m%d")
+                },
+                'createDisposition': 'CREATE_IF_NEEDED',
+                'writeDisposition': 'WRITE_TRUNCATE',
+                'allowLargeResults': True,
+                'timePartitioning': {'type': 'DAY'}
+            }
+        }, strict=False)
+
+        result = self.bigquery.query(
+            "SELECT COUNT(*) as num_rows FROM {0}".format(
+                self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d")), dialect='legacy',
+            priority='INTERACTIVE')
+
+        assert result['num_rows'][0] == test_size
 
         self.bigquery.table_delete(self.dataset_prefix, TABLE_ID + test_id + '$' + datetime.today().strftime("%Y%m%d"))
 
@@ -301,18 +322,79 @@ class TestPartitionedTableOperations(object):
         df = make_mixed_dataframe_v2(test_size * 10)
         df2 = make_mixed_dataframe_v2(test_size)
 
-        schema = self.bigquery.generate_schema(df)
-        self.bigquery.table_create(self.dataset_prefix, TABLE_ID + test_id, schema, body={
-            'timePartitioning': {'type': 'DAY'}
-        })
+        self.bigquery.upload(df, self.destination_table + test_id + '_buffer')
 
-        self.bigquery.upload(df, self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d"))
+        self.bigquery.query(f"select * from {self.destination_table}{test_id}_buffer", configuration={
+            'query': {
+                'destinationTable': {
+                    'projectId': _get_project_id(),
+                    'datasetId': self.dataset_prefix,
+                    'tableId': TABLE_ID + test_id + '$' + datetime.today().strftime("%Y%m%d")
+                },
+                'createDisposition': 'CREATE_IF_NEEDED',
+                'writeDisposition': 'WRITE_TRUNCATE',
+                'allowLargeResults': True,
+                'timePartitioning': {'type': 'DAY'}
+            }
+        }, strict=False)
+
+        result = self.bigquery.query(
+            "SELECT COUNT(*) as num_rows FROM {0}".format(
+                self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d")), dialect='legacy',
+            priority='INTERACTIVE')
+
+        assert result['num_rows'][0] == test_size * 10
+
         self.bigquery.upload(df2, self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d"),
                              if_exists='replace')
 
         result = self.bigquery.query(
             "SELECT COUNT(*) as num_rows FROM {0}".format(
                 self.destination_table + test_id + '$' + datetime.today().strftime("%Y%m%d")), dialect='legacy',
+            priority='INTERACTIVE')
+
+        assert result['num_rows'][0] == test_size
+
+    def test_write_to_the_future(self):
+        test_id = "6"
+        test_size = 10
+        df = make_mixed_dataframe_v2(test_size)
+
+        schema = self.bigquery.generate_schema(df)
+        self.bigquery.table_create(self.dataset_prefix, TABLE_ID + test_id, schema, body={
+            'timePartitioning': {'type': 'DAY'}
+        })
+
+        future = (datetime.today() + timedelta(days=60)).strftime("%Y%m%d")
+
+        self.bigquery.upload(df, self.destination_table + test_id + '$' + future,
+                             if_exists='replace')
+
+        result = self.bigquery.query(
+            "SELECT COUNT(*) as num_rows FROM {0}".format(
+                self.destination_table + test_id + '$' + future), dialect='legacy',
+            priority='INTERACTIVE')
+
+        assert result['num_rows'][0] == test_size
+
+    def test_write_to_the_past(self):
+        test_id = "7"
+        test_size = 10
+        df = make_mixed_dataframe_v2(test_size)
+
+        schema = self.bigquery.generate_schema(df)
+        self.bigquery.table_create(self.dataset_prefix, TABLE_ID + test_id, schema, body={
+            'timePartitioning': {'type': 'DAY'}
+        })
+
+        past = (datetime.today() - timedelta(days=600)).strftime("%Y%m%d")
+
+        self.bigquery.upload(df, self.destination_table + test_id + '$' + past,
+                             if_exists='replace')
+
+        result = self.bigquery.query(
+            "SELECT COUNT(*) as num_rows FROM {0}".format(
+                self.destination_table + test_id + '$' + past), dialect='legacy',
             priority='INTERACTIVE')
 
         assert result['num_rows'][0] == test_size
