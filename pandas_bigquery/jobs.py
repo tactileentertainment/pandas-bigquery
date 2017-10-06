@@ -213,7 +213,7 @@ class Jobs(GbqConnector):
             self._print('Retrieving results...')
 
         try:
-            total_rows = len(query_reply['rows'])
+            total_rows = int(query_reply['totalRows'])
         except KeyError:
             total_rows = 0
 
