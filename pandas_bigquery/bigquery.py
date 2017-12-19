@@ -227,24 +227,29 @@ class Bigquery:
                     [root_table_id + '_' + partition_id,
                      str(randint(1, 100000))])
                 self.tables.insert(dataset_id, temporary_table_id, table_schema)
-                self.tabledata.insert_all(dataframe, dataset_id, temporary_table_id,
-                                          chunksize)
-                sleep(30)  # <- Curses Google!!!
-                self.jobs.query('select * from {0}.{1}'
-                                .format(dataset_id, temporary_table_id),
-                                configuration={
-                                    'query': {
-                                        'destinationTable': {
-                                            'projectId': self.project_id,
-                                            'datasetId': dataset_id,
-                                            'tableId': table_id
-                                        },
-                                        'createDisposition': 'CREATE_IF_NEEDED',
-                                        'writeDisposition': write_disposition,
-                                        'allowLargeResults': True
-                                    }
-                                })
-                self.tables.delete(dataset_id, temporary_table_id)
+
+                try:
+                    self.tabledata.insert_all(dataframe, dataset_id, temporary_table_id,
+                                              chunksize)
+                    sleep(30)  # <- Curses Google!!!
+                    self.jobs.query('select * from {0}.{1}'
+                                    .format(dataset_id, temporary_table_id),
+                                    configuration={
+                                        'query': {
+                                            'destinationTable': {
+                                                'projectId': self.project_id,
+                                                'datasetId': dataset_id,
+                                                'tableId': table_id
+                                            },
+                                            'createDisposition': 'CREATE_IF_NEEDED',
+                                            'writeDisposition': write_disposition,
+                                            'allowLargeResults': True
+                                        }
+                                    })
+                    self.tables.delete(dataset_id, temporary_table_id)
+                except Exception as e:
+                    self.tables.delete(dataset_id, temporary_table_id)
+                    raise e
 
 
         else:
