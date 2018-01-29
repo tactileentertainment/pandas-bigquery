@@ -13,7 +13,7 @@ class Tabledata(GbqConnector):
         self.http_error = HttpError
         super(Tabledata, self).__init__(project_id, reauth, verbose, private_key)
 
-    def insert_all(self, dataframe, dataset_id, table_id, chunksize):
+    def insert_all(self, dataframe, dataset_id, table_id, chunksize=500):
         try:
             from googleapiclient.errors import HttpError
         except:
