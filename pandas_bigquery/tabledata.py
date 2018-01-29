@@ -64,7 +64,6 @@ class Tabledata(GbqConnector):
                 if insert_errors:
                     self.process_insert_errors(insert_errors)
 
-                sleep(1)  # Maintains the inserts "per second" rate per API
                 rows = []
 
         self._print("\n")
