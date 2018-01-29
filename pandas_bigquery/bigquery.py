@@ -173,7 +173,7 @@ class Bigquery:
 
         return final_df
 
-    def upload(self, dataframe, destination_table, if_exists='fail', chunksize=10000):
+    def upload(self, dataframe, destination_table, if_exists='fail', chunksize=500):
         if if_exists not in ('fail', 'replace', 'append'):
             raise ValueError("'{0}' is not valid for if_exists".format(if_exists))
 
