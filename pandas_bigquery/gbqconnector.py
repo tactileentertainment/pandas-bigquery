@@ -95,7 +95,10 @@ def _try_credentials(project_id, credentials):
 
 
 class GbqConnector(object):
-    scope = 'https://www.googleapis.com/auth/bigquery'
+    # Added scopes to support federated tables in Google Drive
+    scope = ['https://www.googleapis.com/auth/bigquery',
+             'https://www.googleapis.com/auth/cloud-platform',
+             'https://www.googleapis.com/auth/drive']
 
     def __init__(self, project_id, reauth=False, verbose=False,
                  private_key=None, auth_local_webserver=False):
@@ -144,7 +147,7 @@ class GbqConnector(object):
         from google.auth.exceptions import DefaultCredentialsError
 
         try:
-            credentials, _ = google.auth.default(scopes=[self.scope])
+            credentials, _ = google.auth.default(scopes=self.scope)
         except (DefaultCredentialsError, IOError):
             return None
 
@@ -284,7 +287,7 @@ class GbqConnector(object):
                     json_key['private_key'], 'UTF-8')
 
             credentials = Credentials.from_service_account_info(json_key)
-            credentials = credentials.with_scopes([self.scope])
+            credentials = credentials.with_scopes(self.scope)
 
             # Refresh the token before trying to use it.
             http = httplib2.Http()
