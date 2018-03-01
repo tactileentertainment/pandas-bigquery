@@ -21,7 +21,7 @@ INSTALL_REQUIRES = [
 
 setup(
     name='pandas-bigquery',
-    version='0.9.1',
+    version='0.9.2',
     description="Object oriented Pandas interface to Google Big Query "
                 "(forked from https://github.com/pydata/pandas-gbq)",
     long_description=readme(),
