@@ -1,6 +1,8 @@
 from pandas_bigquery.exceptions import *
 from pandas_bigquery.gbqconnector import GbqConnector
+import logging, sys
 
+log = logging.getLogger()
 
 class Jobs(GbqConnector):
     def __init__(self, project_id, reauth=False, verbose=False, private_key=None):
@@ -11,6 +13,9 @@ class Jobs(GbqConnector):
         self.http_error = HttpError
         super(Jobs, self).__init__(project_id, reauth, verbose, private_key)
 
+    def _print(self, msg, end='\n'):
+        return log.info(msg)
+        
     def copy(self, source_dataset_id, source_table_id, destination_dataset_id, destination_table_id, **kwargs):
         """ Run a copy job
 
