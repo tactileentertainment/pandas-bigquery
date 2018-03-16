@@ -189,8 +189,7 @@ class Bigquery:
             root_table_id, partition_id = table_id.rsplit('$', 1)
 
             if not self.tables.exists(dataset_id, root_table_id):
-                raise NotFoundException("Could not write to the partition because "
-                                        "the table does not exist.")
+                self.tables.insert(dataset_id, root_table_id, table_schema, body={'timePartitioning': {'type': 'DAY'}})
 
             if not self.tables.schema_is_subset(dataset_id,
                                                 root_table_id,

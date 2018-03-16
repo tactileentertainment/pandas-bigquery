@@ -11,6 +11,7 @@ gi#########################################
 *.log
 *.swp
 *.pdb
+*.test
 .project
 .pydevproject
 .settings
